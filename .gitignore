@@ -10,3 +10,7 @@ coverage/
 *.swo
 *~
 
+
+/src/generated/prisma
+
+/src/generated/prisma

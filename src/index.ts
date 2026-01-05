@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { createServer, startServer, stopServer } from './server/Server';
+import { createServer, startServer, stopServer } from './server/Server.js';
 
 const fastify = createServer();
 

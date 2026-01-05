@@ -2,9 +2,9 @@ import Fastify, { FastifyInstance } from "fastify";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import cors from "@fastify/cors";
-import { getSwaggerConfig } from "../config/SwaggerConfig";
-import { getPort, getHost } from "../config/ServerConfig";
-import { registerHealthRoute } from "../routes/HealthRoute";
+import { getSwaggerConfig } from "../config/SwaggerConfig.js";
+import { getPort, getHost } from "../config/ServerConfig.js";
+import { registerHealthRoute } from "../routes/HealthRoute.js";
 
 export function createServer(): FastifyInstance {
   return Fastify({
