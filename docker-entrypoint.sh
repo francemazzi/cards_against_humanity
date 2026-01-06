@@ -1,10 +1,13 @@
 #!/bin/sh
 set -e
 
-echo "🔍 Checking DATABASE_URL..."
+# Build DATABASE_URL from environment variables if not set
 if [ -z "$DATABASE_URL" ]; then
-    echo "❌ ERROR: DATABASE_URL is not set!"
-    exit 1
+    POSTGRES_USER=${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+    DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/cards_db"
+    export DATABASE_URL
+    echo "🔧 DATABASE_URL constructed from environment variables"
 fi
 
 # Show DATABASE_URL without password for debugging
