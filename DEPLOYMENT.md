@@ -72,6 +72,46 @@ http://frasma.tail57cb32.ts.net:6609
 
 **Nota**: Qualsiasi dispositivo connesso alla tua rete Tailscale potrà accedere al servizio senza configurazioni aggiuntive!
 
+### 1.6 Condividere l'accesso con gli amici
+
+Per permettere agli amici di giocare, devi condividere l'accesso alla tua rete Tailscale:
+
+#### Metodo 1: Invito tramite Tailscale Admin Console (Consigliato)
+
+1. Vai su https://login.tailscale.com/admin/machines
+2. Clicca su "Invite User" o "Share Network"
+3. Invia l'invito via email agli amici
+4. Gli amici devono:
+   - Installare Tailscale sul loro dispositivo (PC, smartphone, tablet)
+   - Accettare l'invito e accedere con il loro account
+   - Aprire il browser e andare su: `http://frasma.tail57cb32.ts.net:6609`
+
+#### Metodo 2: Condividere un link di invito
+
+1. Sul Raspberry Pi, esegui:
+   ```bash
+   sudo tailscale up --accept-routes
+   ```
+2. Vai su https://login.tailscale.com/admin/settings/keys
+3. Crea una "Reusable Invite Key" (chiave di invito riutilizzabile)
+4. Condividi questa chiave con gli amici
+5. Gli amici devono:
+   - Installare Tailscale
+   - Usare la chiave per connettersi alla rete
+   - Aprire: `http://frasma.tail57cb32.ts.net:6609`
+
+#### Metodo 3: Accesso pubblico (senza Tailscale)
+
+Se preferisci permettere l'accesso senza Tailscale, devi:
+1. Configurare il port forwarding sul router (porte 3300 e 6609)
+2. Usare un servizio DDNS o avere un IP pubblico statico
+3. Aggiornare `VITE_API_URL` nel file `.env` con l'IP pubblico o dominio
+
+**⚠️ Attenzione**: L'accesso pubblico espone il servizio su internet. Assicurati di:
+- Cambiare le password di default
+- Configurare HTTPS
+- Considerare l'uso di un firewall applicativo
+
 ---
 
 ## Opzione B: Deployment con IP Locale

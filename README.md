@@ -88,13 +88,40 @@ src/
 
 ## 🚀 Quick Start
 
-### 1. Prerequisiti
+### 🎯 Avvio Rapido (Senza Docker)
+
+Se vuoi avviare l'applicazione senza usare Docker, usa semplicemente lo script di avvio:
+
+**Linux/macOS:**
+```bash
+./start.sh
+```
+
+**Windows:**
+```bash
+start.bat
+```
+
+Lo script automaticamente:
+- ✅ Verifica che Node.js sia installato
+- ✅ Installa tutte le dipendenze (backend e frontend)
+- ✅ Configura il database con Prisma
+- ✅ Compila il codice TypeScript
+- ✅ Avvia il backend e il frontend
+
+**Nota:** Assicurati di avere un database PostgreSQL in esecuzione (puoi usare `docker compose up -d db` solo per il database).
+
+---
+
+### 📋 Setup Manuale Completo
+
+#### 1. Prerequisiti
 
 - Node.js 20+
-- Docker & Docker Compose
+- Docker & Docker Compose (opzionale)
 - Chiave API OpenAI
 
-### 2. Setup
+#### 2. Setup
 
 ```bash
 # Clona e installa
@@ -107,27 +134,41 @@ cp .env.example .env
 # Modifica .env con la tua OPENAI_API_KEY
 ```
 
-### 3. Avvia Database
+#### 3. Avvia Database
 
 ```bash
 docker compose up -d db
 ```
 
-### 4. Migrazioni Prisma
+#### 4. Migrazioni Prisma
 
 ```bash
 npx prisma generate
 npx prisma migrate dev
 ```
 
-### 5. Avvia Server
+#### 5. Avvia Backend
 
 ```bash
+# Sviluppo (con hot-reload)
+npm run dev
+
+# Oppure build + produzione
+npm run build
+npm start
+```
+
+#### 6. Avvia Frontend
+
+```bash
+cd client
+npm install
 npm run dev
 ```
 
-Server disponibile su `http://localhost:3300`
+Server backend disponibile su `http://localhost:3300`
 Swagger UI su `http://localhost:3300/documentation`
+Frontend disponibile su `http://localhost:5173`
 
 ---
 
