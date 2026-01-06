@@ -71,9 +71,11 @@ EOF
 else
     echo -e "${GREEN}✅ File .env trovato${NC}"
     
-    # Verifica che VITE_API_URL non sia ancora localhost
-    if grep -q "localhost" .env 2>/dev/null; then
+    # Verifica che VITE_API_URL non sia ancora localhost (controlla solo la riga VITE_API_URL)
+    VITE_API_URL_VALUE=$(grep "^VITE_API_URL=" .env 2>/dev/null | cut -d '=' -f2- | tr -d ' ' || echo "")
+    if [[ "$VITE_API_URL_VALUE" == *"localhost"* ]]; then
         echo -e "${YELLOW}⚠️  Attenzione: VITE_API_URL contiene ancora 'localhost'${NC}"
+        echo -e "${YELLOW}   Valore attuale: ${VITE_API_URL_VALUE}${NC}"
         echo -e "${YELLOW}   Assicurati di averlo aggiornato con il dominio Tailscale o l'IP${NC}"
         read -p "Vuoi continuare comunque? (y/n): " -n 1 -r
         echo
