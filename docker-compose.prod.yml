@@ -12,8 +12,7 @@ services:
       - NODE_ENV=production
       - PORT=3300
       - HOST=0.0.0.0
-      # Inside docker network the db listens on 5432, host mapping is 5457
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/cards_db
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-password}@db:5432/cards_db
     restart: unless-stopped
     depends_on:
       - db
@@ -25,7 +24,7 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
-        # This is consumed at build-time by Vite; browser must reach API via host port mapping
+        # Use environment variable for API URL - replace with your Raspberry Pi IP or domain
         - VITE_API_URL=${VITE_API_URL:-http://localhost:3300}
     container_name: cards-against-humanity-client
     ports:
@@ -57,3 +56,4 @@ volumes:
 networks:
   app-network:
     driver: bridge
+
