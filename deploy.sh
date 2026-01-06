@@ -22,10 +22,19 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-if ! command -v docker-compose &> /dev/null; then
+# Verifica Docker Compose (supporta sia V1 che V2)
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+elif docker compose version &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
     echo -e "${RED}❌ Docker Compose non è installato. Installalo prima di continuare.${NC}"
+    echo -e "${YELLOW}   Prova: sudo apt install docker-compose${NC}"
+    echo -e "${YELLOW}   Oppure assicurati che Docker Compose V2 sia abilitato${NC}"
     exit 1
 fi
+
+echo -e "${GREEN}✅ Docker Compose trovato: ${DOCKER_COMPOSE_CMD}${NC}"
 
 # Verifica se esiste il file .env
 if [ ! -f .env ]; then
@@ -76,15 +85,15 @@ fi
 
 # Build delle immagini
 echo -e "${YELLOW}🔨 Building delle immagini Docker...${NC}"
-docker-compose -f docker-compose.prod.yml build
+${DOCKER_COMPOSE_CMD} -f docker-compose.prod.yml build
 
 # Ferma i container esistenti (se presenti)
 echo -e "${YELLOW}🛑 Fermata dei container esistenti...${NC}"
-docker-compose -f docker-compose.prod.yml down 2>/dev/null || true
+${DOCKER_COMPOSE_CMD} -f docker-compose.prod.yml down 2>/dev/null || true
 
 # Avvia i container
 echo -e "${YELLOW}🚀 Avvio dei container...${NC}"
-docker-compose -f docker-compose.prod.yml up -d
+${DOCKER_COMPOSE_CMD} -f docker-compose.prod.yml up -d
 
 # Attendi che i servizi siano pronti
 echo -e "${YELLOW}⏳ Attesa avvio servizi...${NC}"
@@ -92,7 +101,7 @@ sleep 5
 
 # Verifica lo stato dei container
 echo -e "${YELLOW}📊 Stato dei container:${NC}"
-docker-compose -f docker-compose.prod.yml ps
+${DOCKER_COMPOSE_CMD} -f docker-compose.prod.yml ps
 
 # Estrai la configurazione dal .env
 CLIENT_PORT=$(grep CLIENT_PORT .env | cut -d '=' -f2 | tr -d ' ')
@@ -117,9 +126,9 @@ if [[ $API_DOMAIN == *".ts.net"* ]]; then
 fi
 echo ""
 echo -e "${YELLOW}💡 Per visualizzare i log:${NC}"
-echo -e "   docker-compose -f docker-compose.prod.yml logs -f"
+echo -e "   ${DOCKER_COMPOSE_CMD} -f docker-compose.prod.yml logs -f"
 echo ""
 echo -e "${YELLOW}💡 Per fermare i servizi:${NC}"
-echo -e "   docker-compose -f docker-compose.prod.yml down"
+echo -e "   ${DOCKER_COMPOSE_CMD} -f docker-compose.prod.yml down"
 echo ""
 
