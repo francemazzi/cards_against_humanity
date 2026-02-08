@@ -43,6 +43,8 @@ export const useGameStore = create<GameState>((set) => ({
   setHand: (hand) => set({ hand }),
   logout: () => {
     localStorage.removeItem('openai_key');
+    localStorage.removeItem('nickname');
+    localStorage.removeItem('session_timestamp');
     set({ user: null, isAuthenticated: false, game: null, hand: [], roundHistory: {}, winnerDisplay: null });
   },
 

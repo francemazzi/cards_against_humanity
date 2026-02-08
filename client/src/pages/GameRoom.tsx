@@ -25,16 +25,15 @@ export const GameRoom = () => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [handCollapsed, setHandCollapsed] = useState(false);
 
-  // Ref to capture game state before it changes (for winner overlay)
-  const gameStateRef = useRef<GameResponse | null>(null);
-
-  // Keep ref updated with latest game state
-  useEffect(() => {
-    if (game) {
-      gameStateRef.current = game;
-    }
-  }, [game]);
+  // Ref to capture judging state (table + black card) before winner is selected
+  // This is needed because game_state update arrives before winner_selected
+  const judgingStateRef = useRef<{
+    round: number;
+    blackCard: GameResponse['currentBlackCard'];
+    table: GameResponse['table'];
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,18 +112,18 @@ export const GameRoom = () => {
         socketInstance.on('winner_selected', (data: { winnerId: string, winnerName: string, roundScore: number }) => {
             console.log('Winner Selected:', data);
 
-            // Capture current game state BEFORE it gets updated
-            const currentGame = gameStateRef.current;
+            // Use the saved judging state (saved when judging started)
+            const judgingState = judgingStateRef.current;
 
-            if (currentGame?.currentBlackCard && currentGame.table.length > 0) {
+            if (judgingState?.blackCard && judgingState.table.length > 0) {
               // Find winning entry
-              const winningEntry = currentGame.table.find(t => t.playerId === data.winnerId);
+              const winningEntry = judgingState.table.find(t => t.playerId === data.winnerId);
 
               // Save round history for all players
               addRoundHistory(
-                currentGame.round,
-                currentGame.currentBlackCard,
-                currentGame.table,
+                judgingState.round,
+                judgingState.blackCard,
+                judgingState.table,
                 data.winnerId
               );
 
@@ -134,11 +133,14 @@ export const GameRoom = () => {
                   winnerId: data.winnerId,
                   winnerName: data.winnerName,
                   roundScore: data.roundScore,
-                  blackCard: currentGame.currentBlackCard,
+                  blackCard: judgingState.blackCard,
                   winningCards: winningEntry.cards,
-                  round: currentGame.round
+                  round: judgingState.round
                 });
               }
+
+              // Clear the ref after use
+              judgingStateRef.current = null;
             }
 
             // Also show toast notification
@@ -152,6 +154,15 @@ export const GameRoom = () => {
 
         socketInstance.on('judging_started', (gameState: GameResponse) => {
             console.log('Judging Started:', gameState);
+
+            // Save the judging state for when winner is selected
+            // This is needed because game_state may update before winner_selected arrives
+            judgingStateRef.current = {
+              round: gameState.round,
+              blackCard: gameState.currentBlackCard,
+              table: gameState.table
+            };
+
             setGame(gameState);
             refreshHandFor();
         });
@@ -523,7 +534,7 @@ export const GameRoom = () => {
         {/* Hand Area - Fixed on mobile, relative on desktop */}
         {game.status !== 'GAME_OVER' && (
           <div className={clsx(
-            "bg-gray-800 shadow-inner-top safe-area-bottom",
+            "bg-gray-800 shadow-inner-top safe-area-bottom transition-all duration-300",
             // Mobile: fixed bottom
             "fixed bottom-0 left-0 right-0 z-20",
             // Desktop: relative positioning
@@ -532,34 +543,59 @@ export const GameRoom = () => {
             "p-3 md:p-6 landscape:p-2"
           )}>
             <div className="max-w-7xl mx-auto">
-                {/* Mini Black Card preview - only on mobile */}
-                {game.currentBlackCard && (
-                  <div className="lg:hidden mb-2">
-                    <div className="bg-black text-white p-2 rounded-lg text-sm">
-                      <span className="line-clamp-2 font-bold">{game.currentBlackCard.text}</span>
-                      {game.currentBlackCard.pick && game.currentBlackCard.pick > 1 && (
-                        <span className="text-yellow-400 text-xs ml-2">(Pick {game.currentBlackCard.pick})</span>
-                      )}
+                {/* Header with toggle button */}
+                <div className="flex items-center justify-between mb-2 px-2">
+                  <h3 className="text-white font-bold text-sm md:text-base landscape:text-xs">
+                    Your Hand {canPlay && `(Pick ${pickCount})`}
+                  </h3>
+                  {/* Toggle button - only on mobile */}
+                  <button
+                    onClick={() => setHandCollapsed(!handCollapsed)}
+                    className="lg:hidden p-2 text-white hover:bg-gray-700 rounded-lg transition-colors"
+                    aria-label={handCollapsed ? "Show hand" : "Hide hand"}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={clsx("h-6 w-6 transition-transform", handCollapsed && "rotate-180")}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11l5-5m0 0l5 5m-5-5v12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Collapsible content */}
+                <div className={clsx(
+                  "transition-all duration-300 overflow-hidden lg:!max-h-none lg:!opacity-100",
+                  handCollapsed ? "max-h-0 opacity-0" : "max-h-[500px] opacity-100"
+                )}>
+                  {/* Mini Black Card preview - only on mobile */}
+                  {game.currentBlackCard && (
+                    <div className="lg:hidden mb-2">
+                      <div className="bg-black text-white p-2 rounded-lg text-sm">
+                        <span className="line-clamp-2 font-bold">{game.currentBlackCard.text}</span>
+                        {game.currentBlackCard.pick && game.currentBlackCard.pick > 1 && (
+                          <span className="text-yellow-400 text-xs ml-2">(Pick {game.currentBlackCard.pick})</span>
+                        )}
+                      </div>
                     </div>
+                  )}
+
+                  <div className="flex gap-2 xs:gap-3 md:gap-4 landscape:gap-2 overflow-x-auto pb-3 md:pb-4 landscape:pb-2 px-2 snap-x scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+                      {hand.map((card) => (
+                          <div key={card.id} className="snap-center shrink-0">
+                              <Card
+                                  card={card}
+                                  size="sm"
+                                  onClick={() => canPlay && toggleCardSelection(card.id)}
+                                  isSelected={selectedCards.includes(card.id)}
+                                  disabled={!canPlay && game.status !== 'LOBBY'}
+                              />
+                          </div>
+                      ))}
                   </div>
-                )}
-
-                <h3 className="text-white font-bold text-sm md:text-base landscape:text-xs mb-2 md:mb-4 landscape:mb-1 px-2">
-                  Your Hand {canPlay && `(Pick ${pickCount})`}
-                </h3>
-
-                <div className="flex gap-2 xs:gap-3 md:gap-4 landscape:gap-2 overflow-x-auto pb-3 md:pb-4 landscape:pb-2 px-2 snap-x scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
-                    {hand.map((card) => (
-                        <div key={card.id} className="snap-center shrink-0">
-                            <Card
-                                card={card}
-                                size="sm"
-                                onClick={() => canPlay && toggleCardSelection(card.id)}
-                                isSelected={selectedCards.includes(card.id)}
-                                disabled={!canPlay && game.status !== 'LOBBY'}
-                            />
-                        </div>
-                    ))}
                 </div>
 
                 {canPlay && selectedCards.length === pickCount && (
