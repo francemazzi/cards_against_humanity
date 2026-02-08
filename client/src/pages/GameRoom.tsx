@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { initSocket, socket, gameService } from '../services/api';
 import { useGameStore } from '../store/gameStore';
 import { Card } from '../components/Card';
+import { WinnerOverlay } from '../components/WinnerOverlay';
+import { PlayerHistoryModal } from '../components/PlayerHistoryModal';
 import type { GameResponse } from '../types';
 import clsx from 'clsx';
 import { PlayerSessionStorage } from '../services/PlayerSessionStorage';
@@ -11,14 +13,28 @@ import { GameJoinClient } from '../services/GameJoinClient';
 export const GameRoom = () => {
   const { gameId } = useParams<{ gameId: string }>();
   const navigate = useNavigate();
-  const { user, game, hand, setGame, setHand } = useGameStore();
+  const {
+    user, game, hand, setGame, setHand,
+    winnerDisplay, setWinnerDisplay,
+    roundHistory, addRoundHistory,
+    selectedPlayerHistory, setSelectedPlayerHistory
+  } = useGameStore();
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
-  // Removed unused isReady state
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Ref to capture game state before it changes (for winner overlay)
+  const gameStateRef = useRef<GameResponse | null>(null);
+
+  // Keep ref updated with latest game state
+  useEffect(() => {
+    if (game) {
+      gameStateRef.current = game;
+    }
+  }, [game]);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,16 +112,42 @@ export const GameRoom = () => {
 
         socketInstance.on('winner_selected', (data: { winnerId: string, winnerName: string, roundScore: number }) => {
             console.log('Winner Selected:', data);
-            
-            // Show notification if I won or lost
-            if (data.winnerId === resolvedPlayerId) {
-              setNotification({ message: `🎉 You won this round! +${data.roundScore} points!`, type: 'success' });
-            } else {
-              setNotification({ message: `${data.winnerName} won this round!`, type: 'info' });
+
+            // Capture current game state BEFORE it gets updated
+            const currentGame = gameStateRef.current;
+
+            if (currentGame?.currentBlackCard && currentGame.table.length > 0) {
+              // Find winning entry
+              const winningEntry = currentGame.table.find(t => t.playerId === data.winnerId);
+
+              // Save round history for all players
+              addRoundHistory(
+                currentGame.round,
+                currentGame.currentBlackCard,
+                currentGame.table,
+                data.winnerId
+              );
+
+              // Show winner overlay
+              if (winningEntry) {
+                setWinnerDisplay({
+                  winnerId: data.winnerId,
+                  winnerName: data.winnerName,
+                  roundScore: data.roundScore,
+                  blackCard: currentGame.currentBlackCard,
+                  winningCards: winningEntry.cards,
+                  round: currentGame.round
+                });
+              }
             }
-            
-            // Clear notification after 5 seconds
-            setTimeout(() => setNotification(null), 5000);
+
+            // Also show toast notification
+            if (data.winnerId === resolvedPlayerId) {
+              setNotification({ message: `You won this round!`, type: 'success' });
+            } else {
+              setNotification({ message: `${data.winnerName} won!`, type: 'info' });
+            }
+            setTimeout(() => setNotification(null), 3000);
         });
 
         socketInstance.on('judging_started', (gameState: GameResponse) => {
@@ -265,12 +307,13 @@ export const GameRoom = () => {
         
         <div className="flex-1 overflow-y-auto p-3 md:p-4">
           {sortedPlayers.map((player, index) => (
-            <div 
+            <div
               key={player.id}
+              onClick={() => setSelectedPlayerHistory(player.id)}
               className={clsx(
-                "mb-2 md:mb-3 p-3 md:p-4 rounded-lg border-2 transition-all",
-                player.id === playerId 
-                  ? "bg-blue-900 border-blue-500 shadow-lg scale-105" 
+                "mb-2 md:mb-3 p-3 md:p-4 rounded-lg border-2 transition-all cursor-pointer hover:opacity-90",
+                player.id === playerId
+                  ? "bg-blue-900 border-blue-500 shadow-lg scale-105"
                   : "bg-gray-800 border-gray-700",
                 player.id === game.czarId && "ring-2 ring-yellow-400"
               )}
@@ -338,7 +381,11 @@ export const GameRoom = () => {
         )}
 
         {/* Main Game Area */}
-        <div className="flex-1 p-4 md:p-8 flex flex-col gap-4 md:gap-8 overflow-y-auto">
+        <div className={clsx(
+          "flex-1 p-4 md:p-8 flex flex-col gap-4 md:gap-8 overflow-y-auto",
+          // Add padding-bottom on mobile to account for fixed hand area
+          game.status !== 'GAME_OVER' && "pb-52 lg:pb-8"
+        )}>
           
           {/* Game Over Screen */}
           {game.status === 'GAME_OVER' && (
@@ -473,10 +520,30 @@ export const GameRoom = () => {
           )}
         </div>
 
-        {/* Hand Area (Fixed Bottom) - Hide on Game Over */}
+        {/* Hand Area - Fixed on mobile, relative on desktop */}
         {game.status !== 'GAME_OVER' && (
-          <div className="bg-gray-800 p-3 md:p-6 landscape:p-2 shadow-inner-top">
+          <div className={clsx(
+            "bg-gray-800 shadow-inner-top safe-area-bottom",
+            // Mobile: fixed bottom
+            "fixed bottom-0 left-0 right-0 z-20",
+            // Desktop: relative positioning
+            "lg:relative lg:left-auto lg:right-auto lg:bottom-auto lg:z-auto",
+            // Padding
+            "p-3 md:p-6 landscape:p-2"
+          )}>
             <div className="max-w-7xl mx-auto">
+                {/* Mini Black Card preview - only on mobile */}
+                {game.currentBlackCard && (
+                  <div className="lg:hidden mb-2">
+                    <div className="bg-black text-white p-2 rounded-lg text-sm">
+                      <span className="line-clamp-2 font-bold">{game.currentBlackCard.text}</span>
+                      {game.currentBlackCard.pick && game.currentBlackCard.pick > 1 && (
+                        <span className="text-yellow-400 text-xs ml-2">(Pick {game.currentBlackCard.pick})</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <h3 className="text-white font-bold text-sm md:text-base landscape:text-xs mb-2 md:mb-4 landscape:mb-1 px-2">
                   Your Hand {canPlay && `(Pick ${pickCount})`}
                 </h3>
@@ -509,6 +576,24 @@ export const GameRoom = () => {
           </div>
         )}
       </div>
+
+      {/* Winner Overlay */}
+      {winnerDisplay && (
+        <WinnerOverlay
+          data={winnerDisplay}
+          onClose={() => setWinnerDisplay(null)}
+          isMe={winnerDisplay.winnerId === playerId}
+        />
+      )}
+
+      {/* Player History Modal */}
+      {selectedPlayerHistory && (
+        <PlayerHistoryModal
+          playerName={game.players.find(p => p.id === selectedPlayerHistory)?.name || 'Player'}
+          history={roundHistory[selectedPlayerHistory] || []}
+          onClose={() => setSelectedPlayerHistory(null)}
+        />
+      )}
     </div>
   );
 };

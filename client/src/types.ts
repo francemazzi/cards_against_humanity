@@ -81,3 +81,26 @@ export interface CreateGameResponse {
   message: string;
 }
 
+// Winner display data for the winner overlay
+export interface WinnerDisplayData {
+  winnerId: string;
+  winnerName: string;
+  roundScore: number;
+  blackCard: BlackCard;
+  winningCards: WhiteCard[];
+  round: number;
+}
+
+// Round history entry for player history
+export interface RoundHistoryEntry {
+  round: number;
+  blackCard: BlackCard;
+  playedCards: WhiteCard[];
+  isWinner: boolean;
+}
+
+// Player history map
+export interface PlayerHistory {
+  [playerId: string]: RoundHistoryEntry[];
+}
+
