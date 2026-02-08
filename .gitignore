@@ -10,6 +10,8 @@ coverage/
 *.swo
 *~
 
+# Claude / Cursor – never commit (may contain secrets)
+.claude/
 
 /src/generated/prisma
 
