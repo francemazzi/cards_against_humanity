@@ -35,7 +35,6 @@ RUN npm install prisma @prisma/client --save-dev
 
 # Copy generated Prisma client from builder
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/src/generated ./src/generated
 
 COPY --from=builder /app/dist ./dist
 
