@@ -63,8 +63,10 @@ export interface GameResponse {
 // User types
 export interface UserPublic {
   id: string;
-  openaiKeyLast4: string;
+  username: string;
   nickname?: string;
+  hasOpenAIKey: boolean;
+  openaiKeyLast4?: string;
   createdAt: string;
   lastLoginAt?: string;
 }
@@ -72,7 +74,6 @@ export interface UserPublic {
 export interface AuthResponse {
   user: UserPublic;
   message: string;
-  isNewUser: boolean;
 }
 
 export interface CreateGameResponse {
@@ -102,5 +103,15 @@ export interface RoundHistoryEntry {
 // Player history map
 export interface PlayerHistory {
   [playerId: string]: RoundHistoryEntry[];
+}
+
+// Leaderboard
+export interface LeaderboardEntry {
+  userId: string;
+  username: string;
+  nickname?: string;
+  gamesPlayed: number;
+  gamesWon: number;
+  totalScore: number;
 }
 

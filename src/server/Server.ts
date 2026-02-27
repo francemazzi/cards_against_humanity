@@ -2,6 +2,7 @@ import Fastify, { FastifyInstance } from "fastify";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
 import { Server as HttpServer } from "http";
 import { getSwaggerConfig } from "../config/SwaggerConfig.js";
 import { getPort, getHost } from "../config/ServerConfig.js";
@@ -24,8 +25,12 @@ async function registerPlugins(fastify: FastifyInstance): Promise<void> {
     origin: true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-OpenAI-Key", "Accept"],
+    allowedHeaders: ["Content-Type", "Accept"],
     exposedHeaders: ["Set-Cookie"],
+  });
+
+  await fastify.register(cookie, {
+    secret: process.env.SESSION_SECRET || "default-dev-secret-change-in-prod!!",
   });
 
   await fastify.register(swagger, getSwaggerConfig());

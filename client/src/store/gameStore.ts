@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import type { AuthResponse, GameResponse, WhiteCard, WinnerDisplayData, PlayerHistory, BlackCard, PlayedCards } from '../types';
+import { authService } from '../services/api';
+import type { UserPublic, GameResponse, WhiteCard, WinnerDisplayData, PlayerHistory, BlackCard, PlayedCards } from '../types';
 
 interface GameState {
-  user: AuthResponse['user'] | null;
+  user: UserPublic | null;
   isAuthenticated: boolean;
   game: GameResponse | null;
   hand: WhiteCard[];
@@ -15,10 +16,10 @@ interface GameState {
   selectedPlayerHistory: string | null;
 
   // Actions
-  setUser: (user: AuthResponse['user']) => void;
+  setUser: (user: UserPublic) => void;
   setGame: (game: GameResponse | null) => void;
   setHand: (hand: WhiteCard[]) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 
   // Winner display actions
   setWinnerDisplay: (data: WinnerDisplayData | null) => void;
@@ -41,10 +42,12 @@ export const useGameStore = create<GameState>((set) => ({
   setUser: (user) => set({ user, isAuthenticated: true }),
   setGame: (game) => set({ game }),
   setHand: (hand) => set({ hand }),
-  logout: () => {
-    localStorage.removeItem('openai_key');
-    localStorage.removeItem('nickname');
-    localStorage.removeItem('session_timestamp');
+  logout: async () => {
+    try {
+      await authService.logout();
+    } catch {
+      // Ignore errors on logout
+    }
     set({ user: null, isAuthenticated: false, game: null, hand: [], roundHistory: {}, winnerDisplay: null });
   },
 

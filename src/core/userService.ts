@@ -1,98 +1,119 @@
 // User Service - manages user authentication and CRUD operations
-// Users are identified by their OpenAI API key (hashed for security)
+// Users authenticate via username/password, OpenAI key is optional
 
-import { createHash } from "crypto";
+import { createHash, createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
+import bcrypt from "bcrypt";
 import prisma from "../db/prisma.js";
-import type { User, UserPublic, CreateUserRequest, UpdateUserRequest } from "./types.js";
+import type { User, UserPublic, UpdateUserRequest, LeaderboardEntry } from "./types.js";
+
+const SALT_ROUNDS = 10;
+
+function getEncryptionKey(): Buffer {
+  const secret = process.env.SESSION_SECRET || "default-dev-secret-change-in-prod!!";
+  // Derive a 32-byte key from the secret using SHA-256
+  return createHash("sha256").update(secret).digest();
+}
+
+// ============ PASSWORD FUNCTIONS ============
+
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, SALT_ROUNDS);
+}
+
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
+}
+
+// ============ OPENAI KEY ENCRYPTION ============
+
+export function encryptApiKey(apiKey: string): string {
+  const iv = randomBytes(16);
+  const key = getEncryptionKey();
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  let encrypted = cipher.update(apiKey, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  const authTag = cipher.getAuthTag().toString("hex");
+  return `${iv.toString("hex")}:${authTag}:${encrypted}`;
+}
+
+export function decryptApiKey(encryptedData: string): string {
+  const [ivHex, authTagHex, encrypted] = encryptedData.split(":");
+  const key = getEncryptionKey();
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"));
+  decipher.setAuthTag(Buffer.from(authTagHex, "hex"));
+  let decrypted = decipher.update(encrypted, "hex", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
+}
 
 // ============ UTILITY FUNCTIONS ============
 
-/**
- * Hash an OpenAI API key using SHA-256
- * This is used as the unique identifier for users
- */
 export function hashApiKey(apiKey: string): string {
   return createHash("sha256").update(apiKey).digest("hex");
 }
 
-/**
- * Extract the last 4 characters of an API key for display purposes
- */
 export function getApiKeyLast4(apiKey: string): string {
   return apiKey.slice(-4);
 }
 
-/**
- * Convert a database user to the internal User type
- */
 function dbUserToUser(dbUser: {
   id: string;
-  openaiKeyHash: string;
-  openaiKeyLast4: string;
+  username: string;
+  passwordHash: string;
   nickname: string | null;
+  openaiKeyHash: string | null;
+  openaiKeyLast4: string | null;
+  openaiKeyEncrypted: string | null;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt: Date | null;
 }): User {
   return {
     id: dbUser.id,
-    openaiKeyHash: dbUser.openaiKeyHash,
-    openaiKeyLast4: dbUser.openaiKeyLast4,
+    username: dbUser.username,
+    passwordHash: dbUser.passwordHash,
     nickname: dbUser.nickname ?? undefined,
+    openaiKeyHash: dbUser.openaiKeyHash ?? undefined,
+    openaiKeyLast4: dbUser.openaiKeyLast4 ?? undefined,
+    openaiKeyEncrypted: dbUser.openaiKeyEncrypted ?? undefined,
     createdAt: dbUser.createdAt,
     updatedAt: dbUser.updatedAt,
     lastLoginAt: dbUser.lastLoginAt ?? undefined,
   };
 }
 
-/**
- * Convert a User to the public representation (hides sensitive data)
- */
 export function userToPublic(user: User): UserPublic {
   return {
     id: user.id,
-    openaiKeyLast4: user.openaiKeyLast4,
+    username: user.username,
     nickname: user.nickname,
+    hasOpenAIKey: !!user.openaiKeyHash,
+    openaiKeyLast4: user.openaiKeyLast4,
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
   };
 }
 
-// ============ CRUD OPERATIONS ============
+// ============ AUTH OPERATIONS ============
 
-/**
- * Create a new user or return existing user if API key is already registered
- * This implements "upsert" logic - same key = same user
- */
-export async function createUser(request: CreateUserRequest): Promise<User> {
-  const keyHash = hashApiKey(request.openaiApiKey);
-  const keyLast4 = getApiKeyLast4(request.openaiApiKey);
-
-  // Check if user already exists
-  const existingUser = await prisma.user.findUnique({
-    where: { openaiKeyHash: keyHash },
-  });
-
-  if (existingUser) {
-    // User exists - update lastLoginAt and optionally nickname
-    const updatedUser = await prisma.user.update({
-      where: { id: existingUser.id },
-      data: {
-        lastLoginAt: new Date(),
-        ...(request.nickname && { nickname: request.nickname }),
-      },
-    });
-    return dbUserToUser(updatedUser);
+export async function registerUser(
+  username: string,
+  password: string,
+  nickname?: string
+): Promise<User> {
+  const existing = await prisma.user.findUnique({ where: { username } });
+  if (existing) {
+    throw new Error("Username already taken");
   }
 
-  // Create new user
+  const passwordHash = await hashPassword(password);
   const newUser = await prisma.user.create({
     data: {
       id: uuidv4(),
-      openaiKeyHash: keyHash,
-      openaiKeyLast4: keyLast4,
-      nickname: request.nickname ?? null,
+      username,
+      passwordHash,
+      nickname: nickname || username,
       lastLoginAt: new Date(),
     },
   });
@@ -100,61 +121,81 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
   return dbUserToUser(newUser);
 }
 
-/**
- * Find a user by their API key
- */
+export async function loginUser(username: string, password: string): Promise<User> {
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user) {
+    throw new Error("Invalid username or password");
+  }
+
+  const valid = await verifyPassword(password, user.passwordHash);
+  if (!valid) {
+    throw new Error("Invalid username or password");
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
+
+  return dbUserToUser(updated);
+}
+
+// ============ OPENAI KEY MANAGEMENT ============
+
+export async function setUserOpenAIKey(userId: string, apiKey: string): Promise<{ last4: string }> {
+  const keyHash = hashApiKey(apiKey);
+  const keyLast4 = getApiKeyLast4(apiKey);
+  const encrypted = encryptApiKey(apiKey);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      openaiKeyHash: keyHash,
+      openaiKeyLast4: keyLast4,
+      openaiKeyEncrypted: encrypted,
+    },
+  });
+
+  return { last4: keyLast4 };
+}
+
+export async function getUserOpenAIKey(userId: string): Promise<string | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { openaiKeyEncrypted: true },
+  });
+  if (!user?.openaiKeyEncrypted) return null;
+  return decryptApiKey(user.openaiKeyEncrypted);
+}
+
+export async function removeUserOpenAIKey(userId: string): Promise<void> {
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      openaiKeyHash: null,
+      openaiKeyLast4: null,
+      openaiKeyEncrypted: null,
+    },
+  });
+}
+
+// ============ CRUD OPERATIONS ============
+
+export async function findUserById(id: string): Promise<User | null> {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) return null;
+  return dbUserToUser(user);
+}
+
 export async function findUserByApiKey(apiKey: string): Promise<User | null> {
   const keyHash = hashApiKey(apiKey);
-  
   const user = await prisma.user.findUnique({
     where: { openaiKeyHash: keyHash },
   });
-
-  if (!user) {
-    return null;
-  }
-
+  if (!user) return null;
   return dbUserToUser(user);
 }
 
-/**
- * Find a user by their ID
- */
-export async function findUserById(id: string): Promise<User | null> {
-  const user = await prisma.user.findUnique({
-    where: { id },
-  });
-
-  if (!user) {
-    return null;
-  }
-
-  return dbUserToUser(user);
-}
-
-/**
- * Get or create a user from an API key
- * This is the main authentication method
- */
-export async function authenticateUser(apiKey: string): Promise<User> {
-  const existingUser = await findUserByApiKey(apiKey);
-  
-  if (existingUser) {
-    // Update last login time
-    await prisma.user.update({
-      where: { id: existingUser.id },
-      data: { lastLoginAt: new Date() },
-    });
-    return { ...existingUser, lastLoginAt: new Date() };
-  }
-
-  // Auto-create user on first authentication
-  return createUser({ openaiApiKey: apiKey });
-}
-
-/**
- * Update user information
- */
 export async function updateUser(
   id: string,
   data: UpdateUserRequest
@@ -165,100 +206,101 @@ export async function updateUser(
       ...(data.nickname !== undefined && { nickname: data.nickname || null }),
     },
   });
-
   return dbUserToUser(user);
 }
 
-/**
- * Delete a user by ID
- */
 export async function deleteUser(id: string): Promise<void> {
-  await prisma.user.delete({
-    where: { id },
-  });
+  await prisma.user.delete({ where: { id } });
 }
 
-/**
- * Delete a user by their API key
- */
-export async function deleteUserByApiKey(apiKey: string): Promise<void> {
-  const keyHash = hashApiKey(apiKey);
-  
-  await prisma.user.delete({
-    where: { openaiKeyHash: keyHash },
-  });
-}
+// ============ GAME STATS ============
 
-/**
- * Get all users (admin function - returns public info only)
- */
-export async function getAllUsers(): Promise<UserPublic[]> {
-  const users = await prisma.user.findMany({
-    orderBy: { createdAt: "desc" },
-  });
-
-  return users.map((u: { id: string; openaiKeyHash: string; openaiKeyLast4: string; nickname: string | null; createdAt: Date; updatedAt: Date; lastLoginAt: Date | null }) => userToPublic(dbUserToUser(u)));
-}
-
-/**
- * Get user's games (owned games)
- */
 export async function getUserGames(userId: string): Promise<{ id: string; status: string; createdAt: Date }[]> {
-  const games = await prisma.game.findMany({
+  return prisma.game.findMany({
     where: { ownerId: userId },
-    select: {
-      id: true,
-      status: true,
-      createdAt: true,
-    },
+    select: { id: true, status: true, createdAt: true },
     orderBy: { createdAt: "desc" },
   });
-
-  return games;
 }
 
-/**
- * Get user statistics
- */
 export async function getUserStats(userId: string): Promise<{
   totalGames: number;
   gamesWon: number;
   totalRoundsPlayed: number;
 }> {
-  // Count owned games
   const totalGames = await prisma.game.count({
     where: { ownerId: userId },
   });
 
-  // Count games won (where user's player won)
   const gamesWon = await prisma.game.count({
     where: {
-      ownerId: userId,
       status: "GAME_OVER",
       players: {
         some: {
           userId: userId,
+          isBot: false,
+        },
+      },
+      winnerId: { not: null },
+    },
+  });
+
+  const roundsPlayed = await prisma.playedCard.count({
+    where: {
+      player: { userId: userId },
+    },
+  });
+
+  return { totalGames, gamesWon, totalRoundsPlayed: roundsPlayed };
+}
+
+// ============ LEADERBOARD ============
+
+export async function getLeaderboard(limit = 50): Promise<LeaderboardEntry[]> {
+  const users = await prisma.user.findMany({
+    where: {
+      username: { not: "_system" },
+    },
+    select: {
+      id: true,
+      username: true,
+      nickname: true,
+      players: {
+        where: {
+          isBot: false,
+          game: { status: "GAME_OVER" },
+        },
+        select: {
+          id: true,
+          score: true,
           game: {
-            winnerId: { not: null },
+            select: {
+              winnerId: true,
+            },
           },
         },
       },
     },
   });
 
-  // Count rounds played
-  const roundsPlayed = await prisma.playedCard.count({
-    where: {
-      player: {
-        userId: userId,
-      },
-    },
-  });
+  const entries: LeaderboardEntry[] = users
+    .map((u: typeof users[number]) => {
+      const gamesPlayed = u.players.length;
+      const gamesWon = u.players.filter((p: typeof u.players[number]) => p.game.winnerId === p.id).length;
+      const totalScore = u.players.reduce((sum: number, p: typeof u.players[number]) => sum + p.score, 0);
 
-  return {
-    totalGames,
-    gamesWon,
-    totalRoundsPlayed: roundsPlayed,
-  };
+      return {
+        userId: u.id,
+        username: u.username,
+        nickname: u.nickname ?? undefined,
+        gamesPlayed,
+        gamesWon,
+        totalScore,
+      };
+    })
+    .filter((e: LeaderboardEntry) => e.gamesPlayed > 0)
+    .sort((a: LeaderboardEntry, b: LeaderboardEntry) => b.gamesWon - a.gamesWon || b.totalScore - a.totalScore)
+    .slice(0, limit);
+
+  return entries;
 }
-

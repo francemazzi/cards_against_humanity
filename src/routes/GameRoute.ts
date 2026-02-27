@@ -1,6 +1,7 @@
 // Game API Routes
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import * as gameService from "../core/gameService.js";
+import * as userService from "../core/userService.js";
 import { authenticationHook } from "../middleware/authMiddleware.js";
 import { GameLobbyService } from "../core/GameLobbyService.js";
 
@@ -27,14 +28,6 @@ interface GameParams {
 interface PlayerParams {
   gameId: string;
   playerId: string;
-}
-
-// Header type for OpenAI key
-const OPENAI_KEY_HEADER = "x-openai-key";
-
-// Helper to extract API key from headers
-function getApiKeyFromRequest(request: FastifyRequest): string | undefined {
-  return request.headers[OPENAI_KEY_HEADER] as string | undefined;
 }
 
 export async function registerGameRoute(
@@ -313,19 +306,10 @@ export async function registerGameRoute(
   fastify.post<{ Body: CreateGameBody }>(
     "/api/games",
     {
+      preHandler: authenticationHook,
       schema: {
-        description:
-          "Create a new game. Requires OpenAI API key in X-OpenAI-Key header.",
+        description: "Create a new game. Requires authentication.",
         tags: ["Game"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key (required for AI opponents)",
-            },
-          },
-        },
         body: {
           type: "object",
           required: ["humanPlayerName", "personas"],
@@ -357,7 +341,7 @@ export async function registerGameRoute(
       reply: FastifyReply
     ) => {
       const { humanPlayerName, personas, pointsToWin } = request.body;
-      const apiKey = getApiKeyFromRequest(request);
+      const apiKey = await userService.getUserOpenAIKey(request.user!.id);
 
       const { gameId, humanPlayerId } = await gameService.createGame(
         {
@@ -365,8 +349,8 @@ export async function registerGameRoute(
           personas,
           pointsToWin,
         },
-        apiKey,
-        undefined
+        apiKey ?? undefined,
+        request.user!.id
       );
 
       return reply.status(201).send({
@@ -387,16 +371,6 @@ export async function registerGameRoute(
         description:
           "Resolve (or create in lobby) the human playerId for the authenticated user",
         tags: ["Game"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-          required: [OPENAI_KEY_HEADER],
-        },
         params: {
           type: "object",
           properties: {
@@ -435,18 +409,10 @@ export async function registerGameRoute(
   fastify.post<{ Params: GameParams }>(
     "/api/games/:gameId/start",
     {
+      preHandler: authenticationHook,
       schema: {
         description: "Start the game (deals cards, begins first round)",
         tags: ["Game"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-        },
         params: {
           type: "object",
           properties: {
@@ -469,9 +435,9 @@ export async function registerGameRoute(
       reply: FastifyReply
     ) => {
       const { gameId } = request.params;
-      const apiKey = getApiKeyFromRequest(request);
+      const apiKey = await userService.getUserOpenAIKey(request.user!.id);
 
-      await gameService.startGame(gameId, apiKey);
+      await gameService.startGame(gameId, apiKey ?? undefined);
       const gameResponse = gameService.getGameResponse(gameId);
 
       return reply.send({
@@ -536,18 +502,10 @@ export async function registerGameRoute(
   fastify.post<{ Params: GameParams; Body: PlayCardsBody }>(
     "/api/games/:gameId/play",
     {
+      preHandler: authenticationHook,
       schema: {
         description: "Play white card(s) for the current round",
         tags: ["Game"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-        },
         params: {
           type: "object",
           properties: {
@@ -574,9 +532,9 @@ export async function registerGameRoute(
     ) => {
       const { gameId } = request.params;
       const { playerId, cardIds } = request.body;
-      const apiKey = getApiKeyFromRequest(request);
+      const apiKey = await userService.getUserOpenAIKey(request.user!.id);
 
-      await gameService.playHumanCards(gameId, playerId, cardIds, apiKey);
+      await gameService.playHumanCards(gameId, playerId, cardIds, apiKey ?? undefined);
       const gameResponse = gameService.getGameResponse(gameId);
 
       return reply.send({
@@ -590,18 +548,10 @@ export async function registerGameRoute(
   fastify.post<{ Params: GameParams; Body: JudgeBody }>(
     "/api/games/:gameId/judge",
     {
+      preHandler: authenticationHook,
       schema: {
         description: "Judge and pick the winning submission (human czar only)",
         tags: ["Game"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-        },
         params: {
           type: "object",
           properties: {
@@ -623,9 +573,9 @@ export async function registerGameRoute(
     ) => {
       const { gameId } = request.params;
       const { winnerIndex } = request.body;
-      const apiKey = getApiKeyFromRequest(request);
+      const apiKey = await userService.getUserOpenAIKey(request.user!.id);
 
-      await gameService.humanJudge(gameId, winnerIndex, apiKey);
+      await gameService.humanJudge(gameId, winnerIndex, apiKey ?? undefined);
       const gameResponse = gameService.getGameResponse(gameId);
 
       return reply.send({
@@ -639,18 +589,10 @@ export async function registerGameRoute(
   fastify.post<{ Params: GameParams }>(
     "/api/games/:gameId/next-round",
     {
+      preHandler: authenticationHook,
       schema: {
         description: "Start the next round",
         tags: ["Game"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-        },
         params: {
           type: "object",
           properties: {
@@ -664,9 +606,9 @@ export async function registerGameRoute(
       reply: FastifyReply
     ) => {
       const { gameId } = request.params;
-      const apiKey = getApiKeyFromRequest(request);
+      const apiKey = await userService.getUserOpenAIKey(request.user!.id);
 
-      await gameService.nextRound(gameId, apiKey);
+      await gameService.nextRound(gameId, apiKey ?? undefined);
       const gameResponse = gameService.getGameResponse(gameId);
 
       return reply.send({

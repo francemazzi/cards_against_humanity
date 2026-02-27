@@ -2,25 +2,29 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { gameService, authService } from "../services/api";
 import { useGameStore } from "../store/gameStore";
-import { LogOut, Plus, Play, X, User as UserIcon } from "lucide-react";
+import { LogOut, Plus, Play, X, User as UserIcon, Settings, Trophy, ExternalLink } from "lucide-react";
 import { PlayerSessionStorage } from "../services/PlayerSessionStorage";
+import { OpenAIKeyModal } from "../components/OpenAIKeyModal";
 import type { Persona } from "../types";
 
 export const Lobby = () => {
   const [joinId, setJoinId] = useState("");
   const user = useGameStore((state) => state.user);
+  const setUser = useGameStore((state) => state.setUser);
   const logout = useGameStore((state) => state.logout);
   const navigate = useNavigate();
 
   const [availablePersonas, setAvailablePersonas] = useState<Persona[]>([]);
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showOpenAIKeyModal, setShowOpenAIKeyModal] = useState(false);
   const [pointsToWin, setPointsToWin] = useState(5);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        await authService.getMe();
+        const me = await authService.getMe();
+        setUser(me);
         const personas = await gameService.getPersonas();
         setAvailablePersonas(personas);
 
@@ -37,11 +41,10 @@ export const Lobby = () => {
         }
       } catch (error: unknown) {
         console.error(error);
-        // If auth fails, redirect
         if (
           (error as { response?: { status: number } })?.response?.status === 401
         ) {
-          logout();
+          await logout();
           navigate("/");
         }
       }
@@ -91,6 +94,11 @@ export const Lobby = () => {
     });
   };
 
+  const handleLogout = async () => {
+    await logout();
+    navigate("/");
+  };
+
   return (
     <div className="min-h-[100dvh] bg-gray-100 p-4 xs:p-6 md:p-8">
       <div className="max-w-4xl mx-auto">
@@ -99,18 +107,57 @@ export const Lobby = () => {
             Cards Against Humanity
           </h1>
           <div className="flex items-center gap-3 xs:gap-4">
-            <span className="font-bold text-sm xs:text-base truncate max-w-[120px] xs:max-w-none">{user?.nickname}</span>
+            <span className="font-bold text-sm xs:text-base truncate max-w-[120px] xs:max-w-none">{user?.nickname || user?.username}</span>
             <button
-              onClick={() => {
-                logout();
-                navigate("/");
-              }}
+              onClick={() => navigate("/leaderboard")}
+              className="p-2 min-w-touch min-h-touch bg-white text-black border-2 border-black rounded hover:bg-gray-100 active:scale-95 flex items-center justify-center"
+              title="Leaderboard"
+            >
+              <Trophy size={20} />
+            </button>
+            <button
+              onClick={() => setShowOpenAIKeyModal(true)}
+              className="p-2 min-w-touch min-h-touch bg-white text-black border-2 border-black rounded hover:bg-gray-100 active:scale-95 flex items-center justify-center"
+              title="Settings"
+            >
+              <Settings size={20} />
+            </button>
+            <button
+              onClick={handleLogout}
               className="p-2 min-w-touch min-h-touch bg-black text-white rounded hover:bg-gray-800 active:scale-95 flex items-center justify-center"
+              title="Logout"
             >
               <LogOut size={20} />
             </button>
           </div>
         </header>
+
+        {/* OpenAI Key Banner */}
+        {!user?.hasOpenAIKey && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4 xs:p-6 mb-6 md:mb-8">
+            <h3 className="font-bold text-yellow-800 mb-1">OpenAI API Key Required</h3>
+            <p className="text-yellow-700 text-sm mb-3">
+              To play with AI opponents, you need to set your OpenAI API key.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => setShowOpenAIKeyModal(true)}
+                className="bg-black text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-gray-800 active:scale-95"
+              >
+                Set API Key
+              </button>
+              <a
+                href="https://platform.openai.com/settings/organization/api-keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm font-medium px-4 py-2"
+              >
+                <ExternalLink size={16} />
+                Get a key from OpenAI
+              </a>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
           {/* Create Game */}
@@ -123,9 +170,10 @@ export const Lobby = () => {
             </p>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="w-full bg-black text-white font-bold py-4 min-h-touch rounded-lg text-base xs:text-lg hover:scale-105 active:scale-95 transition-transform"
+              disabled={!user?.hasOpenAIKey}
+              className="w-full bg-black text-white font-bold py-4 min-h-touch rounded-lg text-base xs:text-lg hover:scale-105 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              Setup Game
+              {user?.hasOpenAIKey ? 'Setup Game' : 'Set API Key First'}
             </button>
           </div>
 
@@ -248,6 +296,11 @@ export const Lobby = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* OpenAI Key Modal */}
+      {showOpenAIKeyModal && (
+        <OpenAIKeyModal onClose={() => setShowOpenAIKeyModal(false)} />
       )}
     </div>
   );

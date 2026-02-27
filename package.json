@@ -23,12 +23,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^8.4.0",
     "@fastify/swagger": "^8.12.0",
     "@fastify/swagger-ui": "^1.9.3",
     "@fastify/websocket": "^11.2.0",
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
+    "bcrypt": "^6.0.0",
     "dotenv": "^16.6.1",
     "fastify": "^4.24.3",
     "openai": "^6.15.0",
@@ -37,6 +39,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.27",
     "@types/pg": "^8.16.0",

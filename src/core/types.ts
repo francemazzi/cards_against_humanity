@@ -118,9 +118,12 @@ export interface PlayerHandResponse {
 
 export interface User {
   id: string;
-  openaiKeyHash: string;
-  openaiKeyLast4: string;
+  username: string;
+  passwordHash: string;
   nickname?: string;
+  openaiKeyHash?: string;
+  openaiKeyLast4?: string;
+  openaiKeyEncrypted?: string;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt?: Date;
@@ -128,22 +131,34 @@ export interface User {
 
 export interface UserPublic {
   id: string;
-  openaiKeyLast4: string;
+  username: string;
   nickname?: string;
+  hasOpenAIKey: boolean;
+  openaiKeyLast4?: string;
   createdAt: Date;
   lastLoginAt?: Date;
 }
 
-export interface CreateUserRequest {
-  openaiApiKey: string;
+export interface RegisterRequest {
+  username: string;
+  password: string;
   nickname?: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
 }
 
 export interface UpdateUserRequest {
   nickname?: string;
 }
 
-export interface AuthenticatedRequest {
-  user: User;
-  openaiApiKey: string; // La chiave originale per le chiamate API
+export interface LeaderboardEntry {
+  userId: string;
+  username: string;
+  nickname?: string;
+  gamesPlayed: number;
+  gamesWon: number;
+  totalScore: number;
 }

@@ -68,7 +68,6 @@ export const GameRoom = () => {
              socketInstance?.emit('join_game', {
                 gameId,
                 playerId: resolvedPlayerId,
-                openaiKey: localStorage.getItem('openai_key')
               });
         });
 

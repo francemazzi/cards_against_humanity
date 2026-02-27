@@ -1,47 +1,34 @@
 // User API Routes
-// CRUD operations for user management with OpenAI API key authentication
+// Authentication with username/password and cookie sessions
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import * as userService from "../core/userService.js";
 import * as llm from "../ai/llm.js";
 import {
   authenticationHook,
-  OPENAI_KEY_HEADER,
-  getApiKeyFromRequest,
+  setSessionCookie,
+  clearSessionCookie,
 } from "../middleware/authMiddleware.js";
-
-// Request body types
-interface UpdateNicknameBody {
-  nickname?: string;
-}
 
 export async function registerUserRoute(fastify: FastifyInstance): Promise<void> {
   // ============ AUTH ENDPOINTS ============
 
   /**
    * POST /api/auth/register
-   * Register/login with OpenAI API key
-   * Creates a new user if not exists, otherwise returns existing user
+   * Register with username + password
    */
   fastify.post(
     "/api/auth/register",
     {
       schema: {
-        description: "Register or login with OpenAI API key. Creates user if not exists.",
+        description: "Register a new account with username and password",
         tags: ["Auth"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-          required: [OPENAI_KEY_HEADER],
-        },
         body: {
           type: "object",
+          required: ["username", "password"],
           properties: {
+            username: { type: "string", minLength: 3, maxLength: 30 },
+            password: { type: "string", minLength: 4, maxLength: 100 },
             nickname: { type: "string", minLength: 1, maxLength: 50 },
           },
         },
@@ -53,20 +40,14 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
                 type: "object",
                 properties: {
                   id: { type: "string" },
-                  openaiKeyLast4: { type: "string" },
+                  username: { type: "string" },
                   nickname: { type: "string" },
+                  hasOpenAIKey: { type: "boolean" },
+                  openaiKeyLast4: { type: "string" },
                   createdAt: { type: "string" },
                   lastLoginAt: { type: "string" },
                 },
               },
-              message: { type: "string" },
-              isNewUser: { type: "boolean" },
-            },
-          },
-          401: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
               message: { type: "string" },
             },
           },
@@ -74,70 +55,221 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
       },
     },
     async (
-      request: FastifyRequest<{ Body: { nickname?: string } }>,
+      request: FastifyRequest<{ Body: { username: string; password: string; nickname?: string } }>,
       reply: FastifyReply
     ) => {
-      const apiKey = getApiKeyFromRequest(request);
+      const { username, password, nickname } = request.body;
 
-      if (!apiKey) {
-        return reply.status(401).send({
-          error: "API key required",
-          message: `Please provide your OpenAI API key in the ${OPENAI_KEY_HEADER} header`,
+      try {
+        const user = await userService.registerUser(username, password, nickname);
+        setSessionCookie(reply, user.id);
+
+        return reply.send({
+          user: userService.userToPublic(user),
+          message: "Registration successful",
         });
+      } catch (error: any) {
+        if (error.message === "Username already taken") {
+          return reply.status(409).send({
+            error: "Username already taken",
+            message: "Please choose a different username",
+          });
+        }
+        throw error;
       }
-
-      // Validate API key with OpenAI
-      const isValid = await llm.validateApiKey(apiKey);
-      if (!isValid) {
-        return reply.status(401).send({
-          error: "Invalid API key",
-          message: "The provided OpenAI API key is invalid or expired",
-        });
-      }
-
-      // Check if user already exists
-      const existingUser = await userService.findUserByApiKey(apiKey);
-      const isNewUser = !existingUser;
-
-      // Create or update user
-      const user = await userService.createUser({
-        openaiApiKey: apiKey,
-        nickname: request.body?.nickname,
-      });
-
-      return reply.send({
-        user: userService.userToPublic(user),
-        message: isNewUser ? "User registered successfully" : "Welcome back!",
-        isNewUser,
-      });
     }
   );
 
   /**
-   * POST /api/auth/validate-key
-   * Validate an OpenAI API key without creating a user
+   * POST /api/auth/login
+   * Login with username + password
    */
   fastify.post(
-    "/api/auth/validate-key",
+    "/api/auth/login",
     {
       schema: {
-        description: "Validate an OpenAI API key without creating a user",
+        description: "Login with username and password",
         tags: ["Auth"],
-        headers: {
+        body: {
           type: "object",
+          required: ["username", "password"],
           properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
+            username: { type: "string" },
+            password: { type: "string" },
           },
-          required: [OPENAI_KEY_HEADER],
         },
         response: {
           200: {
             type: "object",
             properties: {
-              valid: { type: "boolean" },
+              user: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  username: { type: "string" },
+                  nickname: { type: "string" },
+                  hasOpenAIKey: { type: "boolean" },
+                  openaiKeyLast4: { type: "string" },
+                  createdAt: { type: "string" },
+                  lastLoginAt: { type: "string" },
+                },
+              },
+              message: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: { username: string; password: string } }>,
+      reply: FastifyReply
+    ) => {
+      const { username, password } = request.body;
+
+      try {
+        const user = await userService.loginUser(username, password);
+        setSessionCookie(reply, user.id);
+
+        return reply.send({
+          user: userService.userToPublic(user),
+          message: "Login successful",
+        });
+      } catch (error: any) {
+        return reply.status(401).send({
+          error: "Invalid credentials",
+          message: "Invalid username or password",
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/auth/logout
+   * Destroy session cookie
+   */
+  fastify.post(
+    "/api/auth/logout",
+    {
+      schema: {
+        description: "Logout and destroy session",
+        tags: ["Auth"],
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              message: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      clearSessionCookie(reply);
+      return reply.send({ message: "Logged out successfully" });
+    }
+  );
+
+  /**
+   * GET /api/auth/me
+   * Get current authenticated user
+   */
+  fastify.get(
+    "/api/auth/me",
+    {
+      preHandler: authenticationHook,
+      schema: {
+        description: "Get current authenticated user profile",
+        tags: ["Auth"],
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              username: { type: "string" },
+              nickname: { type: "string" },
+              hasOpenAIKey: { type: "boolean" },
+              openaiKeyLast4: { type: "string" },
+              createdAt: { type: "string" },
+              lastLoginAt: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      return reply.send(userService.userToPublic(request.user!));
+    }
+  );
+
+  // ============ OPENAI KEY MANAGEMENT ============
+
+  /**
+   * PUT /api/users/me/openai-key
+   * Set/update OpenAI API key
+   */
+  fastify.put<{ Body: { apiKey: string } }>(
+    "/api/users/me/openai-key",
+    {
+      preHandler: authenticationHook,
+      schema: {
+        description: "Set or update your OpenAI API key",
+        tags: ["Users"],
+        body: {
+          type: "object",
+          required: ["apiKey"],
+          properties: {
+            apiKey: { type: "string", minLength: 1 },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              last4: { type: "string" },
+              message: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { apiKey } = request.body;
+
+      // Validate the key with OpenAI
+      const isValid = await llm.validateApiKey(apiKey);
+      if (!isValid) {
+        return reply.status(400).send({
+          error: "Invalid API key",
+          message: "The provided OpenAI API key is invalid or expired",
+        });
+      }
+
+      const { last4 } = await userService.setUserOpenAIKey(request.user!.id, apiKey);
+
+      return reply.send({
+        success: true,
+        last4,
+        message: "OpenAI API key saved successfully",
+      });
+    }
+  );
+
+  /**
+   * DELETE /api/users/me/openai-key
+   * Remove OpenAI API key
+   */
+  fastify.delete(
+    "/api/users/me/openai-key",
+    {
+      preHandler: authenticationHook,
+      schema: {
+        description: "Remove your OpenAI API key",
+        tags: ["Users"],
+        response: {
+          200: {
+            type: "object",
+            properties: {
               message: { type: "string" },
             },
           },
@@ -145,28 +277,8 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const apiKey = getApiKeyFromRequest(request);
-
-      if (!apiKey) {
-        return reply.status(400).send({
-          valid: false,
-          message: "API key is required in X-OpenAI-Key header",
-        });
-      }
-
-      const isValid = await llm.validateApiKey(apiKey);
-
-      if (isValid) {
-        return reply.send({
-          valid: true,
-          message: "API key is valid",
-        });
-      } else {
-        return reply.status(401).send({
-          valid: false,
-          message: "Invalid API key",
-        });
-      }
+      await userService.removeUserOpenAIKey(request.user!.id);
+      return reply.send({ message: "OpenAI API key removed" });
     }
   );
 
@@ -183,40 +295,24 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
       schema: {
         description: "Get current authenticated user's profile",
         tags: ["Users"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-          required: [OPENAI_KEY_HEADER],
-        },
         response: {
           200: {
             type: "object",
             properties: {
               id: { type: "string" },
-              openaiKeyLast4: { type: "string" },
+              username: { type: "string" },
               nickname: { type: "string" },
+              hasOpenAIKey: { type: "boolean" },
+              openaiKeyLast4: { type: "string" },
               createdAt: { type: "string" },
               lastLoginAt: { type: "string" },
-            },
-          },
-          401: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-              message: { type: "string" },
             },
           },
         },
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const user = request.user!;
-      return reply.send(userService.userToPublic(user));
+      return reply.send(userService.userToPublic(request.user!));
     }
   );
 
@@ -224,23 +320,13 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
    * PUT /api/users/me
    * Update current authenticated user's profile
    */
-  fastify.put<{ Body: UpdateNicknameBody }>(
+  fastify.put<{ Body: { nickname?: string } }>(
     "/api/users/me",
     {
       preHandler: authenticationHook,
       schema: {
         description: "Update current authenticated user's profile",
         tags: ["Users"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-          required: [OPENAI_KEY_HEADER],
-        },
         body: {
           type: "object",
           properties: {
@@ -252,17 +338,12 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
             type: "object",
             properties: {
               id: { type: "string" },
-              openaiKeyLast4: { type: "string" },
+              username: { type: "string" },
               nickname: { type: "string" },
+              hasOpenAIKey: { type: "boolean" },
+              openaiKeyLast4: { type: "string" },
               createdAt: { type: "string" },
               lastLoginAt: { type: "string" },
-            },
-          },
-          401: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-              message: { type: "string" },
             },
           },
         },
@@ -271,7 +352,6 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
     async (request, reply) => {
       const user = request.user!;
       const { nickname } = request.body;
-
       const updatedUser = await userService.updateUser(user.id, { nickname });
       return reply.send(userService.userToPublic(updatedUser));
     }
@@ -288,16 +368,6 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
       schema: {
         description: "Delete current authenticated user's account",
         tags: ["Users"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-          required: [OPENAI_KEY_HEADER],
-        },
         response: {
           200: {
             type: "object",
@@ -305,19 +375,12 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
               message: { type: "string" },
             },
           },
-          401: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-              message: { type: "string" },
-            },
-          },
         },
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const user = request.user!;
-      await userService.deleteUser(user.id);
+      await userService.deleteUser(request.user!.id);
+      clearSessionCookie(reply);
       return reply.send({ message: "User deleted successfully" });
     }
   );
@@ -333,16 +396,6 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
       schema: {
         description: "Get current authenticated user's games",
         tags: ["Users"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-          required: [OPENAI_KEY_HEADER],
-        },
         response: {
           200: {
             type: "array",
@@ -355,19 +408,11 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
               },
             },
           },
-          401: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-              message: { type: "string" },
-            },
-          },
         },
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const user = request.user!;
-      const games = await userService.getUserGames(user.id);
+      const games = await userService.getUserGames(request.user!.id);
       return reply.send(games);
     }
   );
@@ -383,16 +428,6 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
       schema: {
         description: "Get current authenticated user's statistics",
         tags: ["Users"],
-        headers: {
-          type: "object",
-          properties: {
-            [OPENAI_KEY_HEADER]: {
-              type: "string",
-              description: "Your OpenAI API key",
-            },
-          },
-          required: [OPENAI_KEY_HEADER],
-        },
         response: {
           200: {
             type: "object",
@@ -402,20 +437,48 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
               totalRoundsPlayed: { type: "number" },
             },
           },
-          401: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-              message: { type: "string" },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const stats = await userService.getUserStats(request.user!.id);
+      return reply.send(stats);
+    }
+  );
+
+  // ============ LEADERBOARD ============
+
+  /**
+   * GET /api/leaderboard
+   * Get global leaderboard (no auth required)
+   */
+  fastify.get(
+    "/api/leaderboard",
+    {
+      schema: {
+        description: "Get global player leaderboard",
+        tags: ["Leaderboard"],
+        response: {
+          200: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                userId: { type: "string" },
+                username: { type: "string" },
+                nickname: { type: "string" },
+                gamesPlayed: { type: "number" },
+                gamesWon: { type: "number" },
+                totalScore: { type: "number" },
+              },
             },
           },
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const user = request.user!;
-      const stats = await userService.getUserStats(user.id);
-      return reply.send(stats);
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const leaderboard = await userService.getLeaderboard();
+      return reply.send(leaderboard);
     }
   );
 
@@ -427,4 +490,3 @@ export async function registerUserRoute(fastify: FastifyInstance): Promise<void>
     });
   });
 }
-

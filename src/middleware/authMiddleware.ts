@@ -1,146 +1,113 @@
 // Authentication Middleware
-// Validates OpenAI API key and attaches user to request
+// Cookie-based session auth using signed cookies
 
 import { FastifyRequest, FastifyReply, FastifyInstance } from "fastify";
 import * as userService from "../core/userService.js";
-import * as llm from "../ai/llm.js";
 import type { User } from "../core/types.js";
 
-// Header name for OpenAI API key
-export const OPENAI_KEY_HEADER = "x-openai-key";
+// Cookie name for the session
+export const SESSION_COOKIE = "session";
 
 // Extend FastifyRequest to include authenticated user
 declare module "fastify" {
   interface FastifyRequest {
     user?: User;
-    openaiApiKey?: string;
   }
 }
 
 /**
- * Extract API key from request headers
+ * Get userId from signed session cookie
  */
-export function getApiKeyFromRequest(request: FastifyRequest): string | undefined {
-  return request.headers[OPENAI_KEY_HEADER] as string | undefined;
+function getUserIdFromCookie(request: FastifyRequest): string | undefined {
+  const cookie = request.cookies[SESSION_COOKIE];
+  if (!cookie) return undefined;
+
+  const unsigned = request.unsignCookie(cookie);
+  if (!unsigned.valid || !unsigned.value) return undefined;
+
+  return unsigned.value;
 }
 
 /**
- * Authentication hook - validates API key and attaches user to request
- * Use this for routes that require authentication
+ * Set session cookie with userId
+ */
+export function setSessionCookie(reply: FastifyReply, userId: string): void {
+  reply.setCookie(SESSION_COOKIE, userId, {
+    signed: true,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production" && process.env.FORCE_HTTPS === "true",
+    path: "/",
+    maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
+  });
+}
+
+/**
+ * Clear session cookie
+ */
+export function clearSessionCookie(reply: FastifyReply): void {
+  reply.clearCookie(SESSION_COOKIE, {
+    path: "/",
+  });
+}
+
+/**
+ * Authentication hook - requires valid session cookie
  */
 export async function authenticationHook(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
-  const apiKey = getApiKeyFromRequest(request);
+  const userId = getUserIdFromCookie(request);
 
-  if (!apiKey) {
+  if (!userId) {
     reply.status(401).send({
       error: "Authentication required",
-      message: `Please provide your OpenAI API key in the ${OPENAI_KEY_HEADER} header`,
-    });
-    return;
-  }
-
-  // Validate the API key format (basic check)
-  if (!apiKey.startsWith("sk-")) {
-    reply.status(401).send({
-      error: "Invalid API key format",
-      message: "OpenAI API keys should start with 'sk-'",
+      message: "Please login first",
     });
     return;
   }
 
   try {
-    // Authenticate/create user based on API key
-    const user = await userService.authenticateUser(apiKey);
-    
-    // Attach user and API key to request
+    const user = await userService.findUserById(userId);
+    if (!user) {
+      clearSessionCookie(reply);
+      reply.status(401).send({
+        error: "Session expired",
+        message: "Please login again",
+      });
+      return;
+    }
     request.user = user;
-    request.openaiApiKey = apiKey;
   } catch (error) {
     reply.status(500).send({
       error: "Authentication failed",
-      message: "Failed to authenticate user",
+      message: "Failed to load user session",
     });
   }
 }
 
 /**
- * Optional authentication hook - extracts user if API key provided, but doesn't require it
- * Use this for routes where authentication is optional
+ * Optional authentication - loads user if session exists, continues otherwise
  */
 export async function optionalAuthenticationHook(
   request: FastifyRequest,
   _reply: FastifyReply
 ): Promise<void> {
-  const apiKey = getApiKeyFromRequest(request);
-
-  if (!apiKey) {
-    return; // No API key provided, continue without authentication
-  }
+  const userId = getUserIdFromCookie(request);
+  if (!userId) return;
 
   try {
-    // Try to authenticate, but don't fail if it doesn't work
-    const user = await userService.findUserByApiKey(apiKey);
-    if (user) {
-      request.user = user;
-      request.openaiApiKey = apiKey;
-    }
+    const user = await userService.findUserById(userId);
+    if (user) request.user = user;
   } catch {
-    // Ignore errors for optional authentication
-  }
-}
-
-/**
- * Full authentication hook with API key validation against OpenAI
- * Use this for routes that need to verify the API key actually works
- */
-export async function strictAuthenticationHook(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
-  const apiKey = getApiKeyFromRequest(request);
-
-  if (!apiKey) {
-    reply.status(401).send({
-      error: "Authentication required",
-      message: `Please provide your OpenAI API key in the ${OPENAI_KEY_HEADER} header`,
-    });
-    return;
-  }
-
-  // Validate the API key with OpenAI
-  const isValid = await llm.validateApiKey(apiKey);
-  
-  if (!isValid) {
-    reply.status(401).send({
-      error: "Invalid API key",
-      message: "The provided OpenAI API key is invalid or expired",
-    });
-    return;
-  }
-
-  try {
-    // Authenticate/create user
-    const user = await userService.authenticateUser(apiKey);
-    request.user = user;
-    request.openaiApiKey = apiKey;
-  } catch (error) {
-    reply.status(500).send({
-      error: "Authentication failed",
-      message: "Failed to authenticate user",
-    });
+    // Ignore errors for optional auth
   }
 }
 
 /**
  * Register authentication plugin for Fastify
- * Adds authentication decorators to the Fastify instance
  */
 export function registerAuthPlugin(fastify: FastifyInstance): void {
-  // Decorate request with user and apiKey properties
   fastify.decorateRequest("user", null);
-  fastify.decorateRequest("openaiApiKey", null);
 }
-

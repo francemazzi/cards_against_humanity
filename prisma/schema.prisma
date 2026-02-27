@@ -99,17 +99,23 @@ model Persona {
 
 model User {
   id             String   @id @default(uuid())
-  openaiKeyHash  String   @unique
-  openaiKeyLast4 String
+  username       String   @unique
+  passwordHash   String
   nickname       String?
+
+  // OpenAI key (optional, set after login)
+  openaiKeyHash      String?  @unique
+  openaiKeyLast4     String?
+  openaiKeyEncrypted String?  @db.Text
+
   createdAt      DateTime @default(now())
-  updatedAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
   lastLoginAt    DateTime?
 
   games          Game[]
   players        Player[]
 
-  @@index([openaiKeyHash])
+  @@index([username])
 }
 
 // ============ ENUMS ============

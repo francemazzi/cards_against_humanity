@@ -29,7 +29,6 @@ export const SOCKET_EVENTS = {
 interface SocketData {
   gameId?: string;
   playerId?: string;
-  openaiKey?: string;
 }
 
 // Singleton instance
@@ -73,14 +72,13 @@ function handleConnection(socket: Socket): void {
   const socketData: SocketData = {};
 
   // Join a game room
-  socket.on(SOCKET_EVENTS.JOIN_GAME, async (data: { gameId: string; playerId: string; openaiKey?: string }) => {
+  socket.on(SOCKET_EVENTS.JOIN_GAME, async (data: { gameId: string; playerId: string }) => {
     try {
-      const { gameId, playerId, openaiKey } = data;
-      
+      const { gameId, playerId } = data;
+
       // Store data on socket
       socketData.gameId = gameId;
       socketData.playerId = playerId;
-      socketData.openaiKey = openaiKey;
       
       // Join the game room
       await socket.join(`game:${gameId}`);
@@ -110,13 +108,12 @@ function handleConnection(socket: Socket): void {
   socket.on(SOCKET_EVENTS.PLAY_CARDS, async (data: { gameId: string; playerId: string; cardIds: string[] }) => {
     try {
       const { gameId, playerId, cardIds } = data;
-      const apiKey = socketData.openaiKey;
-      
+
       console.log(`Player ${playerId} playing cards in game ${gameId}:`, cardIds);
-      
+
       // Import gameService dynamically to avoid circular dependencies
       const gameService = await import("../core/gameService.js");
-      await gameService.playHumanCards(gameId, playerId, cardIds, apiKey);
+      await gameService.playHumanCards(gameId, playerId, cardIds, undefined);
       
       // Broadcast updated game state
       const gameResponse = gameService.getGameResponse(gameId);
@@ -135,13 +132,12 @@ function handleConnection(socket: Socket): void {
   socket.on(SOCKET_EVENTS.JUDGE_WINNER, async (data: { gameId: string; playerId: string; winnerIndex: number }) => {
     try {
       const { gameId, winnerIndex } = data;
-      const apiKey = socketData.openaiKey;
-      
+
       console.log(`Judging winner in game ${gameId}: index ${winnerIndex}`);
-      
+
       // Import gameService dynamically to avoid circular dependencies
       const gameService = await import("../core/gameService.js");
-      await gameService.humanJudge(gameId, winnerIndex, apiKey);
+      await gameService.humanJudge(gameId, winnerIndex, undefined);
       
       // Broadcast updated game state
       const gameResponse = gameService.getGameResponse(gameId);
@@ -157,13 +153,12 @@ function handleConnection(socket: Socket): void {
   socket.on(SOCKET_EVENTS.START_GAME, async (data: { gameId: string }) => {
     try {
       const { gameId } = data;
-      const apiKey = socketData.openaiKey;
-      
+
       console.log(`Starting game ${gameId}`);
-      
+
       // Import gameService dynamically to avoid circular dependencies
       const gameService = await import("../core/gameService.js");
-      await gameService.startGame(gameId, apiKey);
+      await gameService.startGame(gameId, undefined);
       
       // Broadcast updated game state
       const gameResponse = gameService.getGameResponse(gameId);
@@ -179,13 +174,12 @@ function handleConnection(socket: Socket): void {
   socket.on(SOCKET_EVENTS.NEXT_ROUND, async (data: { gameId: string }) => {
     try {
       const { gameId } = data;
-      const apiKey = socketData.openaiKey;
-      
+
       console.log(`Starting next round in game ${gameId}`);
-      
+
       // Import gameService dynamically to avoid circular dependencies
       const gameService = await import("../core/gameService.js");
-      await gameService.nextRound(gameId, apiKey);
+      await gameService.nextRound(gameId, undefined);
       
       // Broadcast updated game state
       const gameResponse = gameService.getGameResponse(gameId);
@@ -274,17 +268,5 @@ export function broadcastError(gameId: string, message: string): void {
   io.to(`game:${gameId}`).emit(SOCKET_EVENTS.ERROR, { message });
 }
 
-/**
- * Get OpenAI key for a socket in a game
- */
-export function getSocketApiKey(gameId: string, _playerId: string): string | undefined {
-  if (!io) return undefined;
-  
-  const room = io.sockets.adapter.rooms.get(`game:${gameId}`);
-  if (!room) return undefined;
-  
-  // This is a simplified approach - in production you'd want a more robust solution
-  // For now, we'll rely on the key being passed with each request
-  return undefined;
-}
+
 

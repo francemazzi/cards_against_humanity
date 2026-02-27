@@ -15,6 +15,8 @@ services:
       - PORT=3300
       - HOST=0.0.0.0
       - DATABASE_URL=${DATABASE_URL}
+      - SESSION_SECRET=${SESSION_SECRET:-cah-super-secret-session-key-2025}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     restart: unless-stopped
     depends_on:
       - db
