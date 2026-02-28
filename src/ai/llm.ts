@@ -1,26 +1,39 @@
-// OpenAI integration for AI players
-// Supports user-provided API keys (production) or env fallback (dev)
+// LLM integration for AI players
+// Supports OpenAI (cloud) or Ollama (local) as backend
 import OpenAI from "openai";
 import type { BlackCard, WhiteCard, Persona } from "../core/types.js";
 
 // Get dev API key from env (optional fallback)
 const DEV_API_KEY = process.env.OPENAI_API_KEY;
 
+// Ollama configuration (local LLM - no API key needed)
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://ollama:11434/v1";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:3b";
+
 /**
- * Create OpenAI client with user's API key
- * Falls back to env key in dev mode if not provided
+ * Create LLM client.
+ * If an OpenAI API key is available, use OpenAI cloud.
+ * Otherwise, fall back to local Ollama (no key needed).
  */
-function createClient(userApiKey?: string): OpenAI {
+function createClient(userApiKey?: string): { client: OpenAI; model: string } {
   const apiKey = userApiKey || DEV_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error("OpenAI API key is required. Provide via X-OpenAI-Key header.");
+
+  if (apiKey) {
+    return {
+      client: new OpenAI({ apiKey, timeout: 10000 }),
+      model: "gpt-4o-mini",
+    };
   }
-  
-  return new OpenAI({ 
-      apiKey,
-      timeout: 10000 // 10 seconds timeout
-  });
+
+  // Fallback to local Ollama
+  return {
+    client: new OpenAI({
+      baseURL: OLLAMA_BASE_URL,
+      apiKey: "ollama", // Ollama ignores this but the SDK requires it
+      timeout: 30000, // Local models on RPi may be slower
+    }),
+    model: OLLAMA_MODEL,
+  };
 }
 
 /**
@@ -32,11 +45,11 @@ export async function pickCard(
   blackCard: BlackCard,
   userApiKey?: string
 ): Promise<number> {
-  const openai = createClient(userApiKey);
+  const { client, model } = createClient(userApiKey);
   const prompt = buildPickCardPrompt(hand, blackCard);
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+  const response = await client.chat.completions.create({
+    model,
     messages: [
       { role: "system", content: persona.systemPrompt },
       { role: "user", content: prompt },
@@ -66,11 +79,11 @@ export async function judgeCards(
   submissions: WhiteCard[][],
   userApiKey?: string
 ): Promise<number> {
-  const openai = createClient(userApiKey);
+  const { client, model } = createClient(userApiKey);
   const prompt = buildJudgePrompt(blackCard, submissions);
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+  const response = await client.chat.completions.create({
+    model,
     messages: [
       { role: "system", content: persona.systemPrompt },
       { role: "user", content: prompt },
@@ -92,12 +105,29 @@ export async function judgeCards(
 }
 
 /**
- * Validate an API key by making a minimal request
+ * Validate an OpenAI API key by making a minimal request
  */
 export async function validateApiKey(apiKey: string): Promise<boolean> {
   try {
-    const openai = new OpenAI({ apiKey });
+    const openai = new OpenAI({ apiKey, timeout: 10000 });
     await openai.models.list();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if the local Ollama backend is reachable
+ */
+export async function checkOllamaHealth(): Promise<boolean> {
+  try {
+    const ollama = new OpenAI({
+      baseURL: OLLAMA_BASE_URL,
+      apiKey: "ollama",
+      timeout: 5000,
+    });
+    await ollama.models.list();
     return true;
   } catch {
     return false;

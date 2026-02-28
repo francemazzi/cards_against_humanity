@@ -267,7 +267,7 @@ export const GameRoom = () => {
   const sortedPlayers = [...game.players].sort((a, b) => b.score - a.score);
 
   return (
-    <div className="min-h-[100dvh] bg-gray-200 flex relative">
+    <div className="h-[100dvh] overflow-hidden bg-gray-200 flex relative">
       {/* Toast Notification */}
       {notification && (
         <div className={clsx(
@@ -363,7 +363,7 @@ export const GameRoom = () => {
       </div>
 
       {/* Main Game Content */}
-      <div className="flex-1 flex flex-col w-full">
+      <div className="flex-1 flex flex-col w-full min-h-0">
         {/* Header / Info Bar */}
         <div className="bg-black text-white p-3 md:p-4 shadow-md">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
@@ -392,7 +392,7 @@ export const GameRoom = () => {
 
         {/* Main Game Area */}
         <div className={clsx(
-          "flex-1 p-4 md:p-8 flex flex-col gap-4 md:gap-8 overflow-y-auto",
+          "flex-1 min-h-0 p-4 md:p-8 flex flex-col gap-4 md:gap-8 overflow-y-auto",
           // Add padding-bottom on mobile to account for fixed hand area
           game.status !== 'GAME_OVER' && "pb-52 lg:pb-8"
         )}>
@@ -476,7 +476,7 @@ export const GameRoom = () => {
               )}
 
               {/* Table Area */}
-              <div className="flex flex-col items-center gap-4 md:gap-8 min-h-[200px] md:min-h-[300px]">
+              <div className="flex flex-col items-center gap-4 md:gap-8">
                    {/* Black Card */}
                    {game.currentBlackCard && (
                       <div className="mb-4 md:mb-8">

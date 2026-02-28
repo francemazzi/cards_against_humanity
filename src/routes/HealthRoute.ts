@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { checkOllamaHealth } from "../ai/llm.js";
 
 export async function registerHealthRoute(
   fastify: FastifyInstance,
@@ -16,15 +17,18 @@ export async function registerHealthRoute(
             properties: {
               status: { type: "string" },
               timestamp: { type: "string" },
+              ollama: { type: "string" },
             },
           },
         },
       },
     },
     async (_request, _reply) => {
+      const ollamaReady = await checkOllamaHealth();
       return {
         status: "ok",
         timestamp: new Date().toISOString(),
+        ollama: ollamaReady ? "available" : "unavailable",
       };
     }
   );

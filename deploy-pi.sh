@@ -44,6 +44,10 @@ echo "Restarting containers..."
 docker compose -f docker-compose.prod.yml down
 docker compose -f docker-compose.prod.yml up -d
 
+echo ""
+echo "Note: al primo avvio, Ollama scarichera' il modello AI (~2GB). Potrebbe richiedere qualche minuto."
+echo "Controlla il progresso con: docker compose -f docker-compose.prod.yml logs -f api"
+
 # Wait and show status
 sleep 5
 echo ""

@@ -17,9 +17,13 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - SESSION_SECRET=${SESSION_SECRET:-cah-super-secret-session-key-2025}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Ollama (local LLM fallback)
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
     restart: unless-stopped
     depends_on:
       - db
+      - ollama
     networks:
       - app-network
 
@@ -56,8 +60,20 @@ services:
     networks:
       - app-network
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cards-against-humanity-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - app-network
+
 volumes:
   postgres_data:
+  ollama_data:
 
 networks:
   app-network:

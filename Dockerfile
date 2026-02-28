@@ -19,7 +19,7 @@ RUN npm run build
 FROM node:20-alpine AS production
 
 # Install netcat for database health check
-RUN apk add --no-cache netcat-openbsd
+RUN apk add --no-cache netcat-openbsd curl
 
 WORKDIR /app
 
