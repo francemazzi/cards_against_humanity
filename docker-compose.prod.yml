@@ -63,8 +63,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: cards-against-humanity-ollama
-    ports:
-      - "11434:11434"
+    # No host port mapping needed - API accesses via Docker internal network
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
