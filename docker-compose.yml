@@ -27,8 +27,8 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
-        # This is consumed at build-time by Vite; browser must reach API via host port mapping
-        - VITE_API_URL=${VITE_API_URL:-http://localhost:3300}
+        # Empty = same-origin (nginx proxies /api to backend)
+        - VITE_API_URL=${VITE_API_URL:-}
     container_name: cards-against-humanity-client
     ports:
       - "${CLIENT_PORT:-6609}:80"
