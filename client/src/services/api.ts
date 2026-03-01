@@ -69,6 +69,13 @@ export const gameService = {
   }
 };
 
+export const healthService = {
+  check: async (): Promise<{ status: string; ollama: string }> => {
+    const response = await api.get('/health');
+    return response.data;
+  },
+};
+
 export const leaderboardService = {
   getLeaderboard: async (): Promise<LeaderboardEntry[]> => {
     const response = await api.get('/api/leaderboard');

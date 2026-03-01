@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { gameService, authService } from "../services/api";
+import { gameService, authService, healthService } from "../services/api";
 import { useGameStore } from "../store/gameStore";
 import { LogOut, Plus, Play, X, User as UserIcon, Settings, Trophy } from "lucide-react";
 import { PlayerSessionStorage } from "../services/PlayerSessionStorage";
@@ -19,13 +19,18 @@ export const Lobby = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showOpenAIKeyModal, setShowOpenAIKeyModal] = useState(false);
   const [pointsToWin, setPointsToWin] = useState(5);
+  const [ollamaAvailable, setOllamaAvailable] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const me = await authService.getMe();
+        const [me, personas, health] = await Promise.all([
+          authService.getMe(),
+          gameService.getPersonas(),
+          healthService.check().catch(() => ({ status: 'ok', ollama: 'unavailable' })),
+        ]);
         setUser(me);
-        const personas = await gameService.getPersonas();
+        setOllamaAvailable(health.ollama === 'available');
         setAvailablePersonas(personas);
 
         // Pre-select some personas if available, or defaults
@@ -132,19 +137,34 @@ export const Lobby = () => {
           </div>
         </header>
 
-        {/* Optional OpenAI Key Tip */}
+        {/* AI status banner - only shown when user has no API key */}
         {!user?.hasOpenAIKey && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 xs:p-6 mb-6 md:mb-8">
-            <p className="text-blue-800 text-sm">
-              AI players use a local model. For faster, higher quality responses, you can{' '}
+          ollamaAvailable ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 xs:p-6 mb-6 md:mb-8">
+              <p className="text-blue-800 text-sm">
+                AI players use a local model. For faster, higher quality responses, you can{' '}
+                <button
+                  onClick={() => setShowOpenAIKeyModal(true)}
+                  className="underline font-bold hover:text-blue-900"
+                >
+                  add an OpenAI API key
+                </button>.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4 xs:p-6 mb-6 md:mb-8">
+              <h3 className="font-bold text-yellow-800 mb-1">OpenAI API Key Required</h3>
+              <p className="text-yellow-700 text-sm mb-3">
+                The local AI server is offline. To play with AI opponents, set your OpenAI API key.
+              </p>
               <button
                 onClick={() => setShowOpenAIKeyModal(true)}
-                className="underline font-bold hover:text-blue-900"
+                className="bg-black text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-gray-800 active:scale-95"
               >
-                add an OpenAI API key
-              </button>.
-            </p>
-          </div>
+                Set API Key
+              </button>
+            </div>
+          )
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
@@ -157,10 +177,11 @@ export const Lobby = () => {
               Start a new game with AI personalities.
             </p>
             <button
-              onClick={() => setShowCreateModal(true)}
-              className="w-full bg-black text-white font-bold py-4 min-h-touch rounded-lg text-base xs:text-lg hover:scale-105 active:scale-95 transition-transform"
+              onClick={() => !ollamaAvailable && !user?.hasOpenAIKey ? setShowOpenAIKeyModal(true) : setShowCreateModal(true)}
+              disabled={!ollamaAvailable && !user?.hasOpenAIKey}
+              className="w-full bg-black text-white font-bold py-4 min-h-touch rounded-lg text-base xs:text-lg hover:scale-105 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              Setup Game
+              {!ollamaAvailable && !user?.hasOpenAIKey ? 'Set API Key First' : 'Setup Game'}
             </button>
           </div>
 
