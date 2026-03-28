@@ -104,7 +104,7 @@ model User {
   nickname       String?
 
   // OpenAI key (optional, set after login)
-  openaiKeyHash      String?  @unique
+  openaiKeyHash      String?
   openaiKeyLast4     String?
   openaiKeyEncrypted String?  @db.Text
 

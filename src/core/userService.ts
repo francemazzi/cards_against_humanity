@@ -189,7 +189,7 @@ export async function findUserById(id: string): Promise<User | null> {
 
 export async function findUserByApiKey(apiKey: string): Promise<User | null> {
   const keyHash = hashApiKey(apiKey);
-  const user = await prisma.user.findUnique({
+  const user = await prisma.user.findFirst({
     where: { openaiKeyHash: keyHash },
   });
   if (!user) return null;
